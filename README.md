@@ -2,7 +2,7 @@
 
 Backend foundation for an AI-powered career-development application focused on AI Engineer and BrSE career paths.
 
-The current phase provides only application infrastructure: FastAPI, configuration, structured request logging, PostgreSQL with pgvector, Alembic, tests, linting, Docker, and CI. It intentionally contains no business features, AI agent, RAG pipeline, or authentication.
+Phase 1 adds document ingestion and a RAG foundation: PDF, DOCX, TXT, and Markdown extraction; deterministic chunking; pluggable embeddings; pgvector cosine retrieval; and source-aware search results. It intentionally contains no AI agent, CV/JD analysis, authentication, or interview functionality.
 
 ## Prerequisites
 
@@ -49,6 +49,36 @@ The current phase provides only application infrastructure: FastAPI, configurati
 
 Open `http://localhost:8000/docs` for the OpenAPI documentation. The health endpoint is available at `GET /api/v1/health`.
 
+## Document ingestion and retrieval
+
+Document endpoints temporarily use the required `X-Internal-User-ID` header as an ownership boundary. This is a deliberate placeholder that will be replaced by authentication in Phase 6.
+
+Upload a supported file (`.pdf`, `.docx`, `.txt`, `.md`) and process it synchronously:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/documents \
+  -H "X-Internal-User-ID: local-user" \
+  -F "file=@example.txt"
+```
+
+Retrieve document metadata:
+
+```bash
+curl http://localhost:8000/api/v1/documents/<document-id> \
+  -H "X-Internal-User-ID: local-user"
+```
+
+Search only documents owned by that internal user. Results include chunk text, score, filename, document ID, offsets, and extraction metadata:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/documents/search \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-User-ID: local-user" \
+  -d '{"query":"FastAPI PostgreSQL", "limit": 5}'
+```
+
+`AI_CAREER_AGENT_EMBEDDING_PROVIDER=deterministic` is the default for local development and tests. It creates stable hashed token vectors so the complete ingestion pipeline runs without a key. For production-quality semantic retrieval, set `AI_CAREER_AGENT_EMBEDDING_PROVIDER=openai` and provide `AI_CAREER_AGENT_OPENAI_API_KEY`; the configured OpenAI model must support the configured 256 dimensions. Original uploads are stored in the configured local `uploads/` directory (or its Docker volume).
+
 ## Docker
 
 To run the API and database as containers:
@@ -73,6 +103,14 @@ ruff check .
 ruff format --check .
 ```
 
+The integration tests require a running local PostgreSQL/pgvector container and migrations applied:
+
+```bash
+docker compose up -d db
+alembic upgrade head
+pytest
+```
+
 ## Project layout
 
 ```text
@@ -83,7 +121,7 @@ app/schemas/      Shared Pydantic schemas
 app/services/     Application services (reserved for later phases)
 app/agents/       Agent orchestration (reserved for later phases)
 app/tools/        Agent tools (reserved for later phases)
-app/rag/          RAG components (reserved for later phases)
-app/integrations/ External provider adapters (reserved for later phases)
+app/rag/          Parsing, chunking, embeddings, and retrieval components
+app/integrations/ External provider and storage adapters
 tests/            Unit and integration tests
 ```

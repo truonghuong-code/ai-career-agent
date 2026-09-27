@@ -11,6 +11,22 @@ permissions:
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ai_career_agent
+          POSTGRES_USER: ai_career_agent
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_career_agent -d ai_career_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      AI_CAREER_AGENT_DATABASE_URL: postgresql+asyncpg://ai_career_agent:test-password@localhost:5432/ai_career_agent
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -28,6 +44,9 @@ jobs:
 
       - name: Check Ruff formatting
         run: ruff format --check .
+
+      - name: Apply migrations
+        run: alembic upgrade head
 
       - name: Run tests
         run: pytest

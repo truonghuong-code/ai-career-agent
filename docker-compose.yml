@@ -8,11 +8,18 @@ services:
       AI_CAREER_AGENT_DEBUG: "false"
       AI_CAREER_AGENT_LOG_LEVEL: INFO
       AI_CAREER_AGENT_DATABASE_URL: postgresql+asyncpg://ai_career_agent:change-me@db:5432/ai_career_agent
+      AI_CAREER_AGENT_DOCUMENT_STORAGE_DIR: /app/uploads
+      AI_CAREER_AGENT_EMBEDDING_PROVIDER: ${AI_CAREER_AGENT_EMBEDDING_PROVIDER:-deterministic}
+      AI_CAREER_AGENT_EMBEDDING_MODEL: ${AI_CAREER_AGENT_EMBEDDING_MODEL:-text-embedding-3-small}
+      AI_CAREER_AGENT_EMBEDDING_DIMENSIONS: ${AI_CAREER_AGENT_EMBEDDING_DIMENSIONS:-256}
+      AI_CAREER_AGENT_OPENAI_API_KEY: ${AI_CAREER_AGENT_OPENAI_API_KEY:-}
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - document_uploads:/app/uploads
 
   db:
     image: pgvector/pgvector:pg16
@@ -32,3 +39,4 @@ services:
 
 volumes:
   postgres_data:
+  document_uploads:
