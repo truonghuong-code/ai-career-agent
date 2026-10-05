@@ -541,3 +541,44 @@ an empty selection and returns no results; only `None` means no ID filter.
 
 Create more matching chunks than the requested limit and verify the result
 count does not exceed it.
+
+---
+
+# 8. Phase 2.7 — Retrieval Result Model
+
+## 8.1 Test Scope
+
+Retrieval result tests verify the existing `RetrievedChunk` internal contract
+and its explicit Pydantic API mapping. The tests cover source identity, chunk
+identity/index/text, source metadata, similarity score semantics, and the
+absence of ORM-only fields in the HTTP response.
+
+## 8.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| RM-001 | Integration | Internal retrieval result contract | `RetrievedChunk` exposes the retrieved chunk, source document identity, chunk index/text, metadata, and score. |
+| RM-002 | Integration | Similarity-score semantics | The exact semantic match is ordered before a less relevant chunk and has the higher score. |
+| RM-003 | API | Search response contract | The response uses explicit Pydantic fields for chunk/source identity, text, offsets, score, and source metadata without exposing ORM-only fields. |
+
+## 8.3 Detailed Test Cases
+
+### RM-001 — Internal result contract
+
+Ingest a document, search for its content, and verify the returned
+`RetrievedChunk` makes available the chunk ID, document ID, chunk index, text,
+chunk metadata, source document filename/type, and similarity score.
+
+### RM-002 — Higher score is better
+
+Ingest an exact and a less-relevant document. Search using the exact text and
+verify the exact chunk is first and has a score greater than the other result.
+This confirms the repository exposes similarity rather than raw cosine
+distance.
+
+### RM-003 — API boundary
+
+Search through `POST /api/v1/documents/search` and verify the response has the
+documented `DocumentSearchResult` fields, including parser metadata. Verify it
+does not expose ownership, storage, embedding, or SQLAlchemy relationship
+fields.
