@@ -44,7 +44,8 @@ class DocumentRepository:
             processing_status=DocumentStatus.PROCESSING.value,
         )
         self.session.add(document)
-        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(document)
         return document
 
     async def complete_document(self, document: Document, extracted_text_length: int) -> None:
@@ -120,3 +121,6 @@ class DocumentRepository:
             RetrievedChunk(chunk=chunk, score=1 - float(distance))
             for chunk, distance in result.all()
         ]
+
+    async def rollback(self) -> None:
+        await self.session.rollback()

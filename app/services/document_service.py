@@ -74,11 +74,20 @@ class DocumentIngestionService:
             )
             return IngestedDocument(document=document, chunk_count=len(chunks))
         except (DocumentExtractionError, EmbeddingProviderError) as exc:
-            logger.warning("document_ingestion_failed document_id=%s error=%s", document.id, exc)
+            logger.warning(
+                "document_ingestion_failed document_id=%s error=%s",
+                document.id,
+                exc,
+            )
+            await self.repository.rollback()
             await self.repository.fail_document(document, str(exc))
             raise
         except Exception as exc:
-            logger.exception("document_ingestion_failed document_id=%s", document.id)
+            logger.exception(
+                "document_ingestion_failed document_id=%s",
+                document.id,
+            )
+            await self.repository.rollback()
             await self.repository.fail_document(document, str(exc))
             raise DocumentIngestionError("Document processing failed") from exc
 
