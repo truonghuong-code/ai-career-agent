@@ -582,3 +582,44 @@ Search through `POST /api/v1/documents/search` and verify the response has the
 documented `DocumentSearchResult` fields, including parser metadata. Verify it
 does not expose ownership, storage, embedding, or SQLAlchemy relationship
 fields.
+
+---
+
+# 9. Phase 2.8 — Retrieval Quality Tests
+
+## 9.1 Existing Coverage Reused
+
+The Phase 2.6 and 2.7 tests already verify ownership isolation, completed-only
+retrieval, document-ID filtering, result limits, source/result fields, and
+similarity-score ordering. Phase 2.8 adds only the missing cross-cutting
+quality guarantees below.
+
+## 9.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| RQ-001 | Integration | Deterministic repeated retrieval | Equivalent searches using deterministic embeddings return the same ordered chunk IDs and scores. |
+| RQ-002 | Integration | Normalization and chunking retrieval pipeline | Text normalized from CRLF/excess blank lines and split into chunks remains retrievable, with normalized chunk text preserved. |
+| RQ-003 | Integration | Empty eligible corpus | Searching as an owner with no eligible documents returns an empty result list safely. |
+
+## 9.3 Detailed Test Cases
+
+### RQ-001 — Stable retrieval behavior
+
+Ingest multiple documents for one owner and issue the same search twice with
+the deterministic embedding provider. Verify chunk IDs and similarity scores
+are identical and ordered consistently.
+
+### RQ-002 — Text-preparation integration
+
+Ingest CRLF text with excessive blank lines using a small deterministic chunk
+size. Search for terms in the target chunk. Verify it is returned and retains
+normalized line endings and paragraph boundaries, proving normalization and
+chunking do not break retrieval.
+
+### RQ-003 — No eligible retrieval results
+
+Search as an owner without completed documents. Verify an empty result list is
+returned. The system has no similarity threshold, so this test intentionally
+does not claim that arbitrary non-empty queries return no matches when an
+eligible corpus exists.
