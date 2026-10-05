@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 
 
@@ -22,40 +21,64 @@ class DeterministicTextChunker:
         self.chunk_overlap = chunk_overlap
 
     def split(self, text: str) -> list[TextChunk]:
-        normalized = re.sub(r"\s+", " ", text).strip()
-        if not normalized:
+        if not text.strip():
             return []
 
         chunks: list[TextChunk] = []
-        start = 0
-        text_length = len(normalized)
+        text_length = len(text)
+        start = self._skip_whitespace(text, 0, text_length)
+        content_end = text_length
+        while content_end > start and text[content_end - 1].isspace():
+            content_end -= 1
 
-        while start < text_length:
-            end = min(start + self.chunk_size, text_length)
-            if end < text_length:
-                boundary = normalized.rfind(" ", start, end + 1)
-                if boundary > start:
+        while start < content_end:
+            end = min(start + self.chunk_size, content_end)
+            if end < content_end:
+                boundary = self._find_last_whitespace(text, start, end)
+                if boundary is not None:
                     end = boundary
 
-            chunk_text = normalized[start:end].strip()
-            if chunk_text:
-                raw_chunk = normalized[start:end]
-                char_start = start + (len(raw_chunk) - len(raw_chunk.lstrip()))
-                char_end = char_start + len(chunk_text)
-                chunks.append(
-                    TextChunk(
-                        index=len(chunks),
-                        text=chunk_text,
-                        char_start=char_start,
-                        char_end=char_end,
-                    )
-                )
+            while end > start and text[end - 1].isspace():
+                end -= 1
 
-            if end >= text_length:
+            chunks.append(
+                TextChunk(
+                    index=len(chunks),
+                    text=text[start:end],
+                    char_start=start,
+                    char_end=end,
+                )
+            )
+
+            if end >= content_end:
                 break
 
             next_start = max(end - self.chunk_overlap, start + 1)
-            next_boundary = normalized.find(" ", next_start, end)
-            start = next_boundary + 1 if next_boundary != -1 else next_start
+            next_boundary = self._find_first_whitespace(text, next_start, end)
+            start = (
+                self._skip_whitespace(text, next_boundary, content_end)
+                if next_boundary is not None
+                else next_start
+            )
 
         return chunks
+
+    @staticmethod
+    def _skip_whitespace(text: str, start: int, end: int) -> int:
+        while start < end and text[start].isspace():
+            start += 1
+        return start
+
+    @staticmethod
+    def _find_last_whitespace(text: str, start: int, end: int) -> int | None:
+        for index in range(end - 1, start, -1):
+            if text[index].isspace():
+                return index
+        return None
+
+    @staticmethod
+    def _find_first_whitespace(text: str, start: int, end: int) -> int | None:
+        for index in range(start, end):
+            if text[index].isspace():
+                return index
+        return None

@@ -285,7 +285,7 @@ async def test_tn_004_ingestion_chunks_normalized_text_and_keeps_raw_extracted_l
     )
 
     assert [chunk.text for chunk in chunk_result.scalars().all()] == [
-        "First paragraph Second paragraph"
+        "First paragraph\n\nSecond paragraph"
     ]
     assert ingested.document.extracted_text_length == len(content.decode("utf-8"))
 

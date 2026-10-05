@@ -444,3 +444,54 @@ extracted text length rather than normalized length.
 Ingest whitespace-only text. Verify the document is marked `COMPLETED`, stores
 the raw extracted text length, and has no chunk rows. This documents the
 existing empty-content behavior without adding a new validation rule.
+
+---
+
+# 6. Phase 2.5 — Chunking Improvements
+
+## 6.1 Test Scope
+
+Chunking tests verify deterministic chunks derived directly from normalized
+text. They verify stable indexes, valid offsets, non-empty chunk text, bounded
+chunk size, structure preservation, overlap progress, and configuration
+validation.
+
+## 6.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| CI-001 | Unit | Determinism, offsets, and chunk metadata | Equal input/configuration produces equal ordered chunks; each chunk has a sequential index, non-empty text, valid offsets, and text equal to its source slice. |
+| CI-002 | Unit | Preserve normalized paragraph structure | A chunk that contains the full normalized input retains line and paragraph boundaries. |
+| CI-003 | Unit | High valid overlap progress | A valid overlap close to chunk size advances the end boundary on every chunk and terminates. |
+| CI-004 | Unit | Reject invalid chunk configuration | Zero chunk size, negative overlap, and overlap greater than or equal to chunk size raise `ValueError`. |
+| CI-005 | Integration | Ingestion persists structure-preserving chunk text | A normalized document is persisted with paragraph boundaries in its chunk text; raw extracted length remains unchanged. |
+
+## 6.3 Detailed Test Cases
+
+### CI-001 — Deterministic chunks and source-consistent offsets
+
+Run `split()` twice with the same normalized text and configuration. Verify
+identical chunks, indexes beginning at zero, non-empty text, valid offsets,
+and `text[char_start:char_end] == chunk.text` for every chunk.
+
+### CI-002 — Preserve normalized structure
+
+Use a normalized heading and paragraphs that fit in one chunk. Verify the
+chunk retains `\n` and `\n\n`; the chunker must not perform a second global
+whitespace normalization.
+
+### CI-003 — Overlap forward progress
+
+Use a long unbroken token with `chunk_overlap = chunk_size - 1`. Verify each
+successive chunk has a strictly greater end offset and chunking terminates.
+
+### CI-004 — Invalid configuration
+
+Verify configurations that cannot make meaningful progress are rejected at
+construction time.
+
+### CI-005 — Ingestion integration
+
+The Phase 2.4 normalization ingestion test also verifies this pipeline
+property: persisted chunk text retains normalized paragraph boundaries while
+`extracted_text_length` remains the raw parser output length.
