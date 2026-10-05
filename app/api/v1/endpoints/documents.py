@@ -17,6 +17,7 @@ from app.rag.parsers import (
     UnsupportedDocumentTypeError,
 )
 from app.schemas.documents import (
+    DocumentListResponse,
     DocumentResponse,
     DocumentSearchRequest,
     DocumentSearchResponse,
@@ -56,6 +57,17 @@ def get_management_service(session: SessionDep) -> DocumentManagementService:
     return DocumentManagementService(
         repository=DocumentRepository(session),
         storage=LocalDocumentStorage(get_settings().document_storage_dir),
+    )
+
+
+@router.get("", response_model=DocumentListResponse)
+async def list_documents(
+    owner_id: OwnerDep,
+    service: Annotated[DocumentManagementService, Depends(get_management_service)],
+) -> DocumentListResponse:
+    documents = await service.list_documents(owner_id)
+    return DocumentListResponse(
+        documents=[DocumentResponse.model_validate(document) for document in documents]
     )
 
 

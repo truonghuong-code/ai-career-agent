@@ -93,6 +93,14 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_documents(self, owner_id: str) -> list[Document]:
+        result = await self.session.execute(
+            select(Document)
+            .where(Document.owner_id == owner_id)
+            .order_by(Document.created_at.desc(), Document.id.desc())
+        )
+        return list(result.scalars())
+
     async def search(
         self,
         *,

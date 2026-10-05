@@ -21,6 +21,10 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
 
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentResponse]
+
+
 class DocumentSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=5_000)
     document_ids: list[UUID] | None = None

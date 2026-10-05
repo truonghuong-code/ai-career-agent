@@ -121,6 +121,9 @@ class DocumentManagementService:
         self.repository = repository
         self.storage = storage
 
+    async def list_documents(self, owner_id: str) -> list[Document]:
+        return await self.repository.list_documents(owner_id)
+
     async def delete_document(self, document_id: UUID, owner_id: str) -> bool:
         document = await self.repository.get_document(document_id, owner_id)
         if document is None:

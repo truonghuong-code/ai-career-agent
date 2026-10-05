@@ -359,3 +359,48 @@ Phase 2.2 document deletion testing is complete when:
 - Ruff passes.
 - No ownership isolation regression is introduced.
 - No document chunks remain after successful document deletion.
+
+---
+
+# 4. Phase 2.3 — Document Listing
+
+## 4.1 Test Scope
+
+Document listing tests verify that the management API returns only documents
+owned by the current internal user, includes management metadata for every
+processing status, and uses a deterministic order.
+
+## 4.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| DL-001 | Integration | List documents for one owner | Only that owner's documents are returned, including processing, completed, and failed states. |
+| DL-002 | Integration | List ordering | Results are ordered by `created_at DESC`, then `id DESC`. |
+| DL-003 | API | List documents through HTTP | `GET /documents` returns `200` and the documented metadata schema. |
+| DL-004 | API | Owner isolation through HTTP | A caller cannot receive another owner's documents. |
+
+## 4.3 Detailed Test Cases
+
+### DL-001 — Owner-scoped status-inclusive listing
+
+Create documents for two owners and ensure the selected owner receives only
+their own documents. The response must include documents in `PROCESSING`,
+`COMPLETED`, and `FAILED` states because listing is a management operation.
+
+### DL-002 — Deterministic listing order
+
+Create documents with distinct `created_at` values and verify that the newest
+document is returned first. The repository query must use `id DESC` as a
+secondary ordering key.
+
+### DL-003 — List API metadata contract
+
+Call `GET /api/v1/documents` with `X-Internal-User-ID`. Verify HTTP `200` and
+the returned document metadata: ID, filename, MIME type, document type, size,
+checksum, processing status, extracted text length, error information, and
+timestamps.
+
+### DL-004 — List API ownership isolation
+
+Create documents for separate owners, call the endpoint for one owner, and
+verify that the other owner's IDs and filenames are absent.
