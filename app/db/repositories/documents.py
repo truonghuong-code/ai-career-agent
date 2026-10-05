@@ -122,7 +122,7 @@ class DocumentRepository:
             .order_by(distance)
             .limit(limit)
         )
-        if document_ids:
+        if document_ids is not None:
             statement = statement.where(DocumentChunk.document_id.in_(document_ids))
         result = await self.session.execute(statement)
         return [

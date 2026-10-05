@@ -495,3 +495,49 @@ construction time.
 The Phase 2.4 normalization ingestion test also verifies this pipeline
 property: persisted chunk text retains normalized paragraph boundaries while
 `extracted_text_length` remains the raw parser output length.
+
+---
+
+# 7. Phase 2.6 — Retrieval Filtering
+
+## 7.1 Test Scope
+
+Retrieval filtering tests verify that the repository query continues to scope
+both chunk and document ownership, returns only completed documents, applies
+an optional document-ID filter without weakening ownership, and respects the
+requested result limit.
+
+## 7.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|
+| RF-001 | Integration | Ownership defense on chunk and document | A search returns no rows when either the chunk owner or source document owner differs from the requested owner. |
+| RF-002 | Integration | Completed-document filter | Only chunks belonging to `COMPLETED` documents are searchable; `PROCESSING` and `FAILED` documents are excluded. |
+| RF-003 | Integration | Document-ID filter remains owner-scoped | Results belong only to selected documents owned by the requester; another owner's requested ID does not bypass filtering. |
+| RF-004 | Integration | Empty document-ID filter | An explicitly supplied empty document-ID list returns no results rather than disabling filtering. |
+| RF-005 | Integration | Result limit | Retrieval returns no more chunks than the requested limit. |
+
+## 7.3 Detailed Test Cases
+
+### RF-001 — Defense in depth ownership filters
+
+Create completed documents for two owners, then deliberately create mismatched
+chunk/document owner data in the test database. A search for either owner must
+not return these rows, proving that both ownership conditions remain in the
+repository query.
+
+### RF-002 — Completed only
+
+Create chunks for completed documents, then set equivalent documents to
+`PROCESSING` and `FAILED`. Search must return only the completed document.
+
+### RF-003 and RF-004 — Document selection
+
+Search with one owned document ID and another owner's ID. Only the owned,
+selected document may appear. An explicit empty list has the SQL semantics of
+an empty selection and returns no results; only `None` means no ID filter.
+
+### RF-005 — Limit
+
+Create more matching chunks than the requested limit and verify the result
+count does not exceed it.
