@@ -25,6 +25,7 @@ from app.schemas.documents import (
 from app.services.document_service import (
     DocumentIngestionError,
     DocumentIngestionService,
+    DocumentManagementService,
     DocumentSearchService,
 )
 
@@ -48,6 +49,13 @@ def get_search_service(session: SessionDep) -> DocumentSearchService:
     return DocumentSearchService(
         repository=DocumentRepository(session),
         embedding_provider=create_embedding_provider(get_settings()),
+    )
+
+
+def get_management_service(session: SessionDep) -> DocumentManagementService:
+    return DocumentManagementService(
+        repository=DocumentRepository(session),
+        storage=LocalDocumentStorage(get_settings().document_storage_dir),
     )
 
 
@@ -133,3 +141,14 @@ async def search_documents(
             for match in matches
         ]
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: UUID,
+    owner_id: OwnerDep,
+    service: Annotated[DocumentManagementService, Depends(get_management_service)],
+) -> None:
+    deleted = await service.delete_document(document_id, owner_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")

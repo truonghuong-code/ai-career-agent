@@ -17,6 +17,11 @@ class LocalDocumentStorage:
         return str(relative_path)
 
     def delete(self, storage_path: str) -> None:
-        path = self.base_dir / storage_path
+        base_dir = self.base_dir.resolve()
+        path = (self.base_dir / storage_path).resolve()
+        try:
+            path.relative_to(base_dir)
+        except ValueError as exc:
+            raise ValueError("Storage path must be inside the configured base directory") from exc
         if path.exists():
             path.unlink()

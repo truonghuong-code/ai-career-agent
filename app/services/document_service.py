@@ -114,3 +114,19 @@ class DocumentSearchService:
             limit=limit,
             document_ids=document_ids,
         )
+
+
+class DocumentManagementService:
+    def __init__(self, repository: DocumentRepository, storage: LocalDocumentStorage) -> None:
+        self.repository = repository
+        self.storage = storage
+
+    async def delete_document(self, document_id: UUID, owner_id: str) -> bool:
+        document = await self.repository.get_document(document_id, owner_id)
+        if document is None:
+            return False
+        deleted = await self.repository.delete_document(document_id, owner_id)
+        if not deleted:
+            return False
+        self.storage.delete(document.storage_path)
+        return True

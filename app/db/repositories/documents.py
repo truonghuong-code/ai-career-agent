@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -124,3 +124,10 @@ class DocumentRepository:
 
     async def rollback(self) -> None:
         await self.session.rollback()
+
+    async def delete_document(self, document_id: UUID, owner_id: str) -> bool:
+        result = await self.session.execute(
+            delete(Document).where(Document.id == document_id, Document.owner_id == owner_id)
+        )
+        await self.session.commit()
+        return result.rowcount > 0

@@ -1,0 +1,361 @@
+# Phase 2 — Retrieval Quality & Document Lifecycle Test Design
+
+## 1. Purpose
+
+This document defines the test design for Phase 2 — Retrieval Quality & Document Lifecycle.
+
+The purpose of these tests is to verify that the implementation satisfies the requirements defined in:
+
+- `docs/specs/phase-2.md`
+- `docs/design/phase-2.md`
+
+Each test case should be traceable to a Phase 2 requirement and should later be implemented as an automated test under the `tests/` directory.
+
+---
+
+## 2. Test Strategy
+
+Phase 2 uses a combination of:
+
+- **Unit tests** for isolated logic such as normalization, chunking, and storage behavior.
+- **Integration tests** for repository, PostgreSQL, pgvector, ownership, document lifecycle, and cascade deletion.
+- **API tests** for HTTP behavior, request validation, response status codes, and ownership isolation.
+
+Tests should verify both successful behavior and failure behavior.
+
+---
+
+# 3. Phase 2.2 — Document Deletion
+
+## 3.1 Test Scope
+
+Document deletion tests verify that:
+
+- only the document owner can delete a document
+- the document is removed from PostgreSQL
+- associated `DocumentChunk` records are removed through cascade deletion
+- the source file is removed from local storage
+- deleting a non-existing document is handled safely
+- an already-missing source file does not prevent database cleanup
+- storage paths outside the configured storage directory are rejected
+- unexpected filesystem errors are not silently ignored
+- the DELETE API returns the correct HTTP status codes
+
+---
+
+## 3.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| DD-001 | Integration | Owner deletes an existing document | Deletion succeeds and returns `True` |
+| DD-002 | Integration | Delete a document containing chunks | All associated chunks are removed |
+| DD-003 | Integration | Delete a document with an existing source file | Source file is removed |
+| DD-004 | Integration | Another owner attempts to delete the document | Deletion returns `False`; document, chunks, and file remain |
+| DD-005 | Integration | Delete a non-existing document | Deletion returns `False` |
+| DD-006 | Integration | Source file is already missing | Database deletion still succeeds |
+| DD-007 | Unit | Storage path escapes configured storage directory | Deletion is rejected |
+| DD-008 | Unit | Unexpected filesystem deletion error occurs | Exception is propagated |
+| DD-009 | API | Owner deletes an existing document through API | HTTP `204 No Content` |
+| DD-010 | API | Document is not found or belongs to another owner | HTTP `404 Not Found` |
+
+---
+
+## 3.3 Detailed Test Cases
+
+### DD-001 — Delete Owned Document
+
+**Level:** Integration
+
+**Purpose:**  
+Verify that a document owner can delete an existing document.
+
+**Preconditions:**
+
+- A document exists in the database.
+- The document belongs to `owner-1`.
+
+**Action:**
+
+Call:
+
+`DocumentManagementService.delete_document(document_id, "owner-1")`
+
+**Expected Result:**
+
+- The method returns `True`.
+- The document no longer exists in the database.
+
+---
+
+### DD-002 — Cascade Delete Document Chunks
+
+**Level:** Integration
+
+**Purpose:**  
+Verify that deleting a document also deletes all associated chunks through the existing database cascade behavior.
+
+**Preconditions:**
+
+- A document exists.
+- The document has one or more `DocumentChunk` records.
+
+**Action:**
+
+Delete the document through `DocumentManagementService`.
+
+**Expected Result:**
+
+- The document is deleted.
+- No `DocumentChunk` remains for the deleted `document_id`.
+
+**Requirement Verified:**
+
+The existing `ON DELETE CASCADE` relationship works correctly.
+
+---
+
+### DD-003 — Delete Source File
+
+**Level:** Integration
+
+**Purpose:**  
+Verify that successful document deletion also removes the source file from local storage.
+
+**Preconditions:**
+
+- A document exists.
+- Its `storage_path` points to an existing file inside the configured storage directory.
+
+**Action:**
+
+Delete the document.
+
+**Expected Result:**
+
+- Database deletion succeeds.
+- The source file no longer exists.
+
+---
+
+### DD-004 — Ownership Isolation
+
+**Level:** Integration
+
+**Purpose:**  
+Verify that one owner cannot delete another owner's document.
+
+**Preconditions:**
+
+- A document belongs to `owner-1`.
+- The deletion request uses `owner-2`.
+
+**Action:**
+
+Call:
+
+`DocumentManagementService.delete_document(document_id, "owner-2")`
+
+**Expected Result:**
+
+- The method returns `False`.
+- The document remains in the database.
+- Associated chunks remain.
+- The source file remains.
+
+**Security Property:**
+
+Document deletion must always be owner-scoped.
+
+---
+
+### DD-005 — Delete Non-existing Document
+
+**Level:** Integration
+
+**Purpose:**  
+Verify safe behavior when the requested document does not exist.
+
+**Preconditions:**
+
+- The requested `document_id` does not exist.
+
+**Action:**
+
+Attempt to delete the document.
+
+**Expected Result:**
+
+- The service returns `False`.
+- No unrelated database records are modified.
+- No storage file is deleted.
+
+---
+
+### DD-006 — Source File Already Missing
+
+**Level:** Integration
+
+**Purpose:**  
+Verify that an already-missing source file does not prevent database cleanup.
+
+**Preconditions:**
+
+- The document exists in the database.
+- The source file does not exist.
+
+**Action:**
+
+Delete the document.
+
+**Expected Result:**
+
+- The service returns `True`.
+- The document is removed from the database.
+- Associated chunks are removed.
+- No filesystem exception is raised because the source file is already absent.
+
+---
+
+### DD-007 — Reject Storage Path Outside Base Directory
+
+**Level:** Unit
+
+**Purpose:**  
+Verify that `LocalDocumentStorage.delete()` cannot delete files outside the configured storage directory.
+
+**Preconditions:**
+
+Configured storage directory:
+
+`/app/uploads`
+
+A malicious or invalid storage path attempts to escape that directory, for example:
+
+`../../important.txt`
+
+**Action:**
+
+Call `LocalDocumentStorage.delete()` with the invalid path.
+
+**Expected Result:**
+
+- The resolved path is detected as being outside `base_dir`.
+- The operation raises an exception.
+- The external file is not deleted.
+
+**Security Property:**
+
+Filesystem deletion must be constrained to the configured document storage directory.
+
+---
+
+### DD-008 — Unexpected Filesystem Failure
+
+**Level:** Unit
+
+**Purpose:**  
+Verify that unexpected filesystem failures are not silently converted into successful deletion.
+
+**Preconditions:**
+
+- Database deletion succeeds.
+- Source file deletion raises an unexpected filesystem exception such as `PermissionError` or `OSError`.
+
+**Action:**
+
+Execute document deletion.
+
+**Expected Result:**
+
+- The filesystem exception is propagated.
+- The error is not silently converted into `False` or `True`.
+
+**Known Limitation:**
+
+PostgreSQL and the local filesystem do not share one transaction. Because the current design deletes the database record before deleting the source file, a filesystem failure may leave an orphan source file.
+
+Phase 2.2 does not introduce distributed transaction or compensation logic for this case.
+
+---
+
+### DD-009 — DELETE API Success
+
+**Level:** API
+
+**Purpose:**  
+Verify successful HTTP deletion behavior.
+
+**Preconditions:**
+
+- The requested document exists.
+- The request owner owns the document.
+
+**Action:**
+
+Send:
+
+`DELETE /documents/{document_id}`
+
+**Expected Result:**
+
+- HTTP status is `204 No Content`.
+- Response body is empty.
+- Document deletion is completed.
+
+---
+
+### DD-010 — DELETE API Not Found
+
+**Level:** API
+
+**Purpose:**  
+Verify that the API does not reveal whether a document exists for another owner.
+
+**Preconditions:**
+
+Either:
+
+- the document does not exist, or
+- the document belongs to another owner.
+
+**Action:**
+
+Send:
+
+`DELETE /documents/{document_id}`
+
+**Expected Result:**
+
+- HTTP status is `404 Not Found`.
+- Response contains the configured not-found error.
+- No document belonging to another owner is modified.
+
+---
+
+## 3.4 Traceability
+
+| Requirement | Design Component | Test Cases |
+|---|---|---|
+| Owner can delete own document | `DocumentManagementService` + `DocumentRepository` | DD-001 |
+| Chunks deleted with document | PostgreSQL `ON DELETE CASCADE` | DD-002 |
+| Source file removed | `LocalDocumentStorage.delete()` | DD-003 |
+| Ownership isolation | Owner-scoped repository operations | DD-004, DD-010 |
+| Missing document handled safely | Service + API | DD-005, DD-010 |
+| Missing file tolerated | `LocalDocumentStorage.delete()` | DD-006 |
+| Storage path constrained | `LocalDocumentStorage.delete()` | DD-007 |
+| Filesystem errors surfaced | Service + Storage | DD-008 |
+| HTTP success contract | DELETE endpoint | DD-009 |
+| HTTP not-found contract | DELETE endpoint | DD-010 |
+
+---
+
+## 3.5 Exit Criteria
+
+Phase 2.2 document deletion testing is complete when:
+
+- DD-001 through DD-010 are implemented.
+- All tests pass.
+- Existing Phase 1 and Phase 2.1 tests continue to pass.
+- Ruff passes.
+- No ownership isolation regression is introduced.
+- No document chunks remain after successful document deletion.
