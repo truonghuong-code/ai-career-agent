@@ -259,3 +259,59 @@ async def test_failed_ingestion_does_not_persist_chunks(
 
     assert stored_document.processing_status == "failed"
     assert stored_chunks == []
+
+
+async def test_tn_004_ingestion_chunks_normalized_text_and_keeps_raw_extracted_length(
+    db_session,
+    storage_dir,
+) -> None:
+    content = b"\r\nFirst paragraph\r\n\r\n\r\nSecond paragraph\r\n"
+    service = DocumentIngestionService(
+        repository=DocumentRepository(db_session),
+        parsers=DocumentParserRegistry(),
+        chunker=DeterministicTextChunker(chunk_size=200, chunk_overlap=20),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=256),
+        storage=LocalDocumentStorage(storage_dir),
+    )
+
+    ingested = await service.ingest(
+        owner_id="user-a",
+        filename="normalized.txt",
+        mime_type="text/plain",
+        content=content,
+    )
+    chunk_result = await db_session.execute(
+        select(DocumentChunk).where(DocumentChunk.document_id == ingested.document.id)
+    )
+
+    assert [chunk.text for chunk in chunk_result.scalars().all()] == [
+        "First paragraph Second paragraph"
+    ]
+    assert ingested.document.extracted_text_length == len(content.decode("utf-8"))
+
+
+async def test_tn_005_whitespace_only_content_completes_without_chunks(
+    db_session, storage_dir
+) -> None:
+    content = b" \r\n\t \r\n"
+    service = DocumentIngestionService(
+        repository=DocumentRepository(db_session),
+        parsers=DocumentParserRegistry(),
+        chunker=DeterministicTextChunker(chunk_size=200, chunk_overlap=20),
+        embedding_provider=DeterministicEmbeddingProvider(dimensions=256),
+        storage=LocalDocumentStorage(storage_dir),
+    )
+
+    ingested = await service.ingest(
+        owner_id="user-a",
+        filename="empty.txt",
+        mime_type="text/plain",
+        content=content,
+    )
+    chunk_result = await db_session.execute(
+        select(DocumentChunk).where(DocumentChunk.document_id == ingested.document.id)
+    )
+
+    assert ingested.document.processing_status == "completed"
+    assert ingested.document.extracted_text_length == len(content.decode("utf-8"))
+    assert chunk_result.scalars().all() == []

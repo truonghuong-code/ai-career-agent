@@ -8,6 +8,7 @@ from app.db.repositories.documents import DocumentRepository, RetrievedChunk
 from app.integrations.storage.local import LocalDocumentStorage
 from app.rag.chunking import DeterministicTextChunker
 from app.rag.embeddings import EmbeddingProvider, EmbeddingProviderError
+from app.rag.normalization import TextNormalizer
 from app.rag.parsers import DocumentExtractionError, DocumentParserRegistry
 
 logger = logging.getLogger(__name__)
@@ -31,12 +32,14 @@ class DocumentIngestionService:
         chunker: DeterministicTextChunker,
         embedding_provider: EmbeddingProvider,
         storage: LocalDocumentStorage,
+        normalizer: TextNormalizer | None = None,
     ) -> None:
         self.repository = repository
         self.parsers = parsers
         self.chunker = chunker
         self.embedding_provider = embedding_provider
         self.storage = storage
+        self.normalizer = normalizer or TextNormalizer()
 
     async def ingest(
         self, *, owner_id: str, filename: str, mime_type: str, content: bytes
@@ -57,7 +60,8 @@ class DocumentIngestionService:
         )
         try:
             extracted = parser.extract(content)
-            chunks = self.chunker.split(extracted.text)
+            normalized_text = self.normalizer.normalize(extracted.text)
+            chunks = self.chunker.split(normalized_text)
             embeddings = await self.embedding_provider.embed([chunk.text for chunk in chunks])
             await self.repository.add_chunks(
                 document=document,

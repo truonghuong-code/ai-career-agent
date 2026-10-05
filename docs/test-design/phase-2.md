@@ -404,3 +404,43 @@ timestamps.
 
 Create documents for separate owners, call the endpoint for one owner, and
 verify that the other owner's IDs and filenames are absent.
+
+---
+
+# 5. Phase 2.4 — Text Normalization
+
+## 5.1 Test Scope
+
+Normalization tests verify a conservative deterministic transformation between
+parser extraction and chunking. They must preserve paragraph boundaries and
+must not change the `extracted_text_length` contract, which remains the length
+of raw extracted text.
+
+## 5.2 Test Cases
+
+| ID | Level | Test Case | Expected Result |
+|---|---|---|---|
+| TN-001 | Unit | Normalize line endings | CRLF and CR become LF. |
+| TN-002 | Unit | Trim and bound blank lines | Outer whitespace is removed; three or more line breaks become one paragraph break. |
+| TN-003 | Unit | Deterministic normalization | Equivalent repeated calls produce identical output and preserve meaningful internal whitespace. |
+| TN-004 | Integration | Ingestion chunks normalized text | Stored chunk text is derived from normalized parser output while extracted text length remains raw length. |
+| TN-005 | Integration | Whitespace-only extracted text | Ingestion completes predictably with no chunks and the raw extracted text length retained. |
+
+## 5.3 Detailed Test Cases
+
+### TN-001 through TN-003 — Normalizer behavior
+
+Use unit tests for line-ending conversion, bounded blank lines, outer trimming,
+determinism, and preservation of non-line-break internal whitespace.
+
+### TN-004 — Normalization placement in ingestion
+
+Ingest text containing CRLFs and excessive blank lines. Verify persisted chunk
+text reflects normalized text and that `extracted_text_length` equals the raw
+extracted text length rather than normalized length.
+
+### TN-005 — Empty normalized content
+
+Ingest whitespace-only text. Verify the document is marked `COMPLETED`, stores
+the raw extracted text length, and has no chunk rows. This documents the
+existing empty-content behavior without adding a new validation rule.
