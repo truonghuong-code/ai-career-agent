@@ -2,7 +2,10 @@
 
 ## Phạm vi đã triển khai
 
-Hệ thống hiện là FastAPI backend với một workflow hoàn chỉnh cho document ingestion và vector retrieval. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file gốc trên local filesystem, trích xuất text, tạo chunk xác định, sinh embedding, và lưu metadata/chunk/vector vào PostgreSQL + pgvector.
+Hệ thống hiện là FastAPI backend với document ingestion, document lifecycle
+management và vector retrieval. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file
+gốc trên local filesystem, trích xuất và chuẩn hóa text, tạo chunk xác định,
+sinh embedding, và lưu metadata/chunk/vector vào PostgreSQL + pgvector.
 
 ```text
 HTTP client
@@ -13,9 +16,11 @@ FastAPI (/api/v1)
   ▼
 Document services
   ├─ parser registry
+  ├─ text normalizer
   ├─ deterministic chunker
   ├─ embedding provider
-  └─ local document storage
+  ├─ local document storage
+  └─ document management
   │
   ▼
 Document repository ── SQLAlchemy async ── PostgreSQL + pgvector
@@ -31,24 +36,42 @@ Các endpoint hiện có:
 
 - `GET /api/v1/health`
 - `POST /api/v1/documents`
+- `GET /api/v1/documents`
 - `GET /api/v1/documents/{document_id}`
 - `POST /api/v1/documents/search`
+- `DELETE /api/v1/documents/{document_id}`
 
 `app/api/v1/endpoints/documents.py` kiểm tra file rỗng/kích thước, gọi service qua dependency injection, và chuyển lỗi domain thành HTTP 400, 413, 415, 422, 502 hoặc 500 khi phù hợp.
 
 ### Schema layer
 
-`app/schemas/` chứa Pydantic schema. `DocumentResponse` là metadata được API trả về. `DocumentSearchRequest` nhận query, optional document IDs và limit 1–20; `DocumentSearchResponse` trả các chunk phù hợp và metadata nguồn. Schema tách biệt SQLAlchemy models khỏi HTTP contract.
+`app/schemas/` chứa Pydantic schema. `DocumentResponse` và
+`DocumentListResponse` là metadata quản lý document được API trả về.
+`DocumentSearchRequest` nhận query, optional document IDs và limit 1–20;
+`DocumentSearchResponse` trả các chunk phù hợp cùng metadata nguồn và score.
+Schema tách biệt SQLAlchemy models khỏi HTTP contract.
 
 ### Service layer
 
-`DocumentIngestionService` điều phối upload processing: chọn parser, tính checksum SHA-256, lưu file, tạo document, parse, chunk, embed, persist chunk và cập nhật status. Lỗi parse/embedding được đánh dấu `failed`; lỗi bất ngờ được wrap thành `DocumentIngestionError` và log.
+`DocumentIngestionService` điều phối upload processing: chọn parser, tính
+checksum SHA-256, lưu file, tạo document ở trạng thái `processing`, parse,
+normalize, chunk, embed, persist chunk và cập nhật status. Lỗi parse/embedding
+được đánh dấu `failed`; lỗi bất ngờ được wrap thành
+`DocumentIngestionError` và log.
 
 `DocumentSearchService` embed query rồi yêu cầu repository tìm các chunk gần nhất.
 
+`DocumentManagementService` list hoặc delete document theo owner. Delete điều
+phối database và local storage; database cascade xóa chunks liên quan.
+
 ### Repository và data-access layer
 
-`DocumentRepository` chứa persistence/query async. Repository tạo document với `processing` status, persist chunks, đánh dấu `completed`/`failed`, lấy metadata theo owner, và truy vấn cosine similarity. Query search luôn lọc cả `DocumentChunk.owner_id`, `Document.owner_id` và document status `completed`.
+`DocumentRepository` chứa persistence/query async. Repository tạo document với
+`processing` status, persist chunks, đánh dấu `completed`/`failed`, list/get/
+delete metadata theo owner, và truy vấn cosine similarity. Query search luôn
+lọc cả `DocumentChunk.owner_id`, `Document.owner_id`, document status
+`completed` và document IDs khi được cung cấp. Kết quả nội bộ
+`RetrievedChunk` chuyển cosine distance thành similarity score (`1 - distance`).
 
 ## Database models và pgvector
 
@@ -73,7 +96,13 @@ Parser chỉ trích xuất text/metadata; không biết database, embedding hay 
 
 ### Chunking
 
-`DeterministicTextChunker` chuẩn hóa whitespace, mặc định chunk 1.000 ký tự với overlap 150 ký tự, ưu tiên ngắt ở whitespace. Nó trả `TextChunk` với `index`, `text`, `char_start`, `char_end`. Thuật toán không cần model và có unit test về tính xác định.
+`TextNormalizer` bảo thủ chuẩn hóa line ending, trim outer whitespace và giới
+hạn blank lines trước khi chunking. `DeterministicTextChunker` xử lý trực tiếp
+normalized text, mặc định chunk 1.000 ký tự với overlap 150 ký tự, ưu tiên ngắt
+ở whitespace và giữ offsets quy chiếu đúng input normalized. Nó trả
+`TextChunk` với `index`, `text`, `char_start`, `char_end`. Thuật toán không cần
+model và có unit test về tính xác định, forward progress và cấu hình không hợp
+lệ.
 
 ### Embedding provider abstraction
 
@@ -98,6 +127,7 @@ Upload multipart file
   → lưu file gốc local
   → tạo metadata document (processing)
   → extract text
+  → normalize text
   → deterministic chunking
   → generate embeddings
   → lưu chunks + vectors trong PostgreSQL/pgvector
@@ -106,7 +136,7 @@ Upload multipart file
 Search request
   → embed query
   → pgvector cosine distance, filtered by owner/status/(optional document IDs)
-  → source-aware chunk results
+  → source-aware chunk results với similarity score
 ```
 
 ## Ownership boundary hiện tại
@@ -121,9 +151,14 @@ Không có authentication. `get_placeholder_owner_id` yêu cầu `X-Internal-Use
 
 ## Testing architecture
 
-- Unit tests: config, health check/request ID, parser TXT/Markdown/DOCX, chunker và deterministic embedding provider.
-- Integration tests: ingestion persistence và owner/document-scoped retrieval với PostgreSQL/pgvector thật.
-- Khi PostgreSQL không chạy, integration fixture skip hai test này; CI cung cấp pgvector PostgreSQL service, chạy migration rồi chạy toàn bộ pytest.
+- Unit tests: config, health check/request ID, parser TXT/Markdown/DOCX,
+  normalizer, chunker, deterministic embedding provider và local storage.
+- Integration/API tests: ingestion lifecycle, deletion/cascade/file cleanup,
+  owner-scoped listing, retrieval filtering/result contract/quality với
+  PostgreSQL/pgvector thật.
+- Khi PostgreSQL không chạy, integration fixture skip các integration tests;
+  CI cung cấp pgvector PostgreSQL service, chạy migration rồi chạy toàn bộ
+  pytest.
 
 ## Chưa tồn tại
 

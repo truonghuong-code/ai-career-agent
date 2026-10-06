@@ -12,17 +12,16 @@ Roadmap này phân biệt rõ phần đã có trong repository và phần chỉ 
 
 **Đã hoàn thành:** upload PDF/DOCX/TXT/Markdown, local file storage, document/chunk metadata, parser registry, deterministic chunking, replaceable embedding provider, pgvector cosine retrieval, source metadata, ownership placeholder `X-Internal-User-ID`, migrations và integration tests.
 
-## Planned
-
 ### Phase 2 — Retrieval quality và document lifecycle
 
-**Objective:** làm retrieval đáng tin cậy hơn trước khi dùng nó làm context cho LLM.
+**Đã hoàn thành:** document lifecycle `processing → completed/failed`,
+owner-scoped document listing/deletion, database cascade và local-file cleanup,
+deterministic text normalization/chunking, retrieval filtering theo owner/status/
+document IDs/limit, stable retrieval result contract và integration quality tests
+với deterministic embeddings. Phase này vẫn dùng `X-Internal-User-ID` như
+ownership placeholder, chưa phải authentication.
 
-**Major features:** đánh giá chunking với tài liệu thực tế; metadata/filtering phong phú hơn; document reprocessing/versioning hoặc deletion lifecycle; validation embedding dimension; retrieval evaluation dataset; có thể thêm keyword/hybrid search hoặc reranking nếu evaluation chứng minh cần thiết.
-
-**Architecture considerations:** vẫn giữ parser/chunker/provider thay thế được; không thêm framework RAG lớn nếu implementation nhỏ hiện tại đáp ứng yêu cầu. Mọi filter phải giữ ownership scope.
-
-**Dependencies:** Phase 1.
+## Planned
 
 ### Phase 3 — LLM integration và grounded answer generation
 

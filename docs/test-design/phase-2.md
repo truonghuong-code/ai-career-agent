@@ -25,9 +25,42 @@ Tests should verify both successful behavior and failure behavior.
 
 ---
 
-# 3. Phase 2.2 — Document Deletion
+# 3. Phase 2.1 — Document Lifecycle
 
 ## 3.1 Test Scope
+
+Lifecycle tests verify the synchronous ingestion state model:
+
+```text
+PROCESSING → COMPLETED
+PROCESSING → FAILED
+```
+
+They verify successful persistence, useful failure information, failed-document
+retrieval exclusion, and rollback of chunks when completion fails.
+
+## 3.2 Test Cases
+
+| ID | Level | Test Case | Implemented Test | Expected Result |
+|---|---|---|---|---|
+| LC-001 | Integration | Successful ingestion lifecycle | `test_ingestion_persists_document_chunks_and_source_metadata` | Owner-scoped document is completed, has no error, stores raw extracted length, chunks, and source file. |
+| LC-002 | Integration | Embedding failure lifecycle | `test_failed_ingestion_marks_document_as_failed` | Document remains inspectable by owner with `failed` status and useful error message. |
+| LC-003 | Integration | Failed document retrieval exclusion | `test_failed_document_is_excluded_from_semantic_retrieval` | A failed document is not returned by semantic retrieval. |
+| LC-004 | Integration | Completion failure rollback | `test_failed_ingestion_does_not_persist_chunks` | Unexpected completion failure marks document failed and leaves no persisted chunks. |
+| LC-005 | Integration | Initial processing state | `test_dl_001_listing_is_owner_scoped_and_includes_management_statuses` | A newly created document remains visible in `processing` until completion/failure. |
+
+## 3.3 Traceability Notes
+
+`DocumentRepository.create_document()` explicitly persists
+`processing_status = PROCESSING`; synchronous ingestion does not introduce a
+`PENDING → PROCESSING` transition. LC-005 reuses the listing integration test
+because it verifies the persisted management state directly.
+
+---
+
+# 4. Phase 2.2 — Document Deletion
+
+## 4.1 Test Scope
 
 Document deletion tests verify that:
 
@@ -43,7 +76,7 @@ Document deletion tests verify that:
 
 ---
 
-## 3.2 Test Cases
+## 4.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -60,7 +93,7 @@ Document deletion tests verify that:
 
 ---
 
-## 3.3 Detailed Test Cases
+## 4.3 Detailed Test Cases
 
 ### DD-001 — Delete Owned Document
 
@@ -332,7 +365,7 @@ Send:
 
 ---
 
-## 3.4 Traceability
+## 4.4 Traceability
 
 | Requirement | Design Component | Test Cases |
 |---|---|---|
@@ -349,7 +382,7 @@ Send:
 
 ---
 
-## 3.5 Exit Criteria
+## 4.5 Exit Criteria
 
 Phase 2.2 document deletion testing is complete when:
 
@@ -362,15 +395,15 @@ Phase 2.2 document deletion testing is complete when:
 
 ---
 
-# 4. Phase 2.3 — Document Listing
+# 5. Phase 2.3 — Document Listing
 
-## 4.1 Test Scope
+## 5.1 Test Scope
 
 Document listing tests verify that the management API returns only documents
 owned by the current internal user, includes management metadata for every
 processing status, and uses a deterministic order.
 
-## 4.2 Test Cases
+## 5.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -379,7 +412,7 @@ processing status, and uses a deterministic order.
 | DL-003 | API | List documents through HTTP | `GET /documents` returns `200` and the documented metadata schema. |
 | DL-004 | API | Owner isolation through HTTP | A caller cannot receive another owner's documents. |
 
-## 4.3 Detailed Test Cases
+## 5.3 Detailed Test Cases
 
 ### DL-001 — Owner-scoped status-inclusive listing
 
@@ -407,16 +440,16 @@ verify that the other owner's IDs and filenames are absent.
 
 ---
 
-# 5. Phase 2.4 — Text Normalization
+# 6. Phase 2.4 — Text Normalization
 
-## 5.1 Test Scope
+## 6.1 Test Scope
 
 Normalization tests verify a conservative deterministic transformation between
 parser extraction and chunking. They must preserve paragraph boundaries and
 must not change the `extracted_text_length` contract, which remains the length
 of raw extracted text.
 
-## 5.2 Test Cases
+## 6.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -426,7 +459,7 @@ of raw extracted text.
 | TN-004 | Integration | Ingestion chunks normalized text | Stored chunk text is derived from normalized parser output while extracted text length remains raw length. |
 | TN-005 | Integration | Whitespace-only extracted text | Ingestion completes predictably with no chunks and the raw extracted text length retained. |
 
-## 5.3 Detailed Test Cases
+## 6.3 Detailed Test Cases
 
 ### TN-001 through TN-003 — Normalizer behavior
 
@@ -447,16 +480,16 @@ existing empty-content behavior without adding a new validation rule.
 
 ---
 
-# 6. Phase 2.5 — Chunking Improvements
+# 7. Phase 2.5 — Chunking Improvements
 
-## 6.1 Test Scope
+## 7.1 Test Scope
 
 Chunking tests verify deterministic chunks derived directly from normalized
 text. They verify stable indexes, valid offsets, non-empty chunk text, bounded
 chunk size, structure preservation, overlap progress, and configuration
 validation.
 
-## 6.2 Test Cases
+## 7.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -466,7 +499,7 @@ validation.
 | CI-004 | Unit | Reject invalid chunk configuration | Zero chunk size, negative overlap, and overlap greater than or equal to chunk size raise `ValueError`. |
 | CI-005 | Integration | Ingestion persists structure-preserving chunk text | A normalized document is persisted with paragraph boundaries in its chunk text; raw extracted length remains unchanged. |
 
-## 6.3 Detailed Test Cases
+## 7.3 Detailed Test Cases
 
 ### CI-001 — Deterministic chunks and source-consistent offsets
 
@@ -498,16 +531,16 @@ property: persisted chunk text retains normalized paragraph boundaries while
 
 ---
 
-# 7. Phase 2.6 — Retrieval Filtering
+# 8. Phase 2.6 — Retrieval Filtering
 
-## 7.1 Test Scope
+## 8.1 Test Scope
 
 Retrieval filtering tests verify that the repository query continues to scope
 both chunk and document ownership, returns only completed documents, applies
 an optional document-ID filter without weakening ownership, and respects the
 requested result limit.
 
-## 7.2 Test Cases
+## 8.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|
@@ -517,7 +550,7 @@ requested result limit.
 | RF-004 | Integration | Empty document-ID filter | An explicitly supplied empty document-ID list returns no results rather than disabling filtering. |
 | RF-005 | Integration | Result limit | Retrieval returns no more chunks than the requested limit. |
 
-## 7.3 Detailed Test Cases
+## 8.3 Detailed Test Cases
 
 ### RF-001 — Defense in depth ownership filters
 
@@ -544,16 +577,16 @@ count does not exceed it.
 
 ---
 
-# 8. Phase 2.7 — Retrieval Result Model
+# 9. Phase 2.7 — Retrieval Result Model
 
-## 8.1 Test Scope
+## 9.1 Test Scope
 
 Retrieval result tests verify the existing `RetrievedChunk` internal contract
 and its explicit Pydantic API mapping. The tests cover source identity, chunk
 identity/index/text, source metadata, similarity score semantics, and the
 absence of ORM-only fields in the HTTP response.
 
-## 8.2 Test Cases
+## 9.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -561,7 +594,7 @@ absence of ORM-only fields in the HTTP response.
 | RM-002 | Integration | Similarity-score semantics | The exact semantic match is ordered before a less relevant chunk and has the higher score. |
 | RM-003 | API | Search response contract | The response uses explicit Pydantic fields for chunk/source identity, text, offsets, score, and source metadata without exposing ORM-only fields. |
 
-## 8.3 Detailed Test Cases
+## 9.3 Detailed Test Cases
 
 ### RM-001 — Internal result contract
 
@@ -585,16 +618,16 @@ fields.
 
 ---
 
-# 9. Phase 2.8 — Retrieval Quality Tests
+# 10. Phase 2.8 — Retrieval Quality Tests
 
-## 9.1 Existing Coverage Reused
+## 10.1 Existing Coverage Reused
 
 The Phase 2.6 and 2.7 tests already verify ownership isolation, completed-only
 retrieval, document-ID filtering, result limits, source/result fields, and
 similarity-score ordering. Phase 2.8 adds only the missing cross-cutting
 quality guarantees below.
 
-## 9.2 Test Cases
+## 10.2 Test Cases
 
 | ID | Level | Test Case | Expected Result |
 |---|---|---|---|
@@ -602,7 +635,7 @@ quality guarantees below.
 | RQ-002 | Integration | Normalization and chunking retrieval pipeline | Text normalized from CRLF/excess blank lines and split into chunks remains retrievable, with normalized chunk text preserved. |
 | RQ-003 | Integration | Empty eligible corpus | Searching as an owner with no eligible documents returns an empty result list safely. |
 
-## 9.3 Detailed Test Cases
+## 10.3 Detailed Test Cases
 
 ### RQ-001 — Stable retrieval behavior
 
