@@ -171,12 +171,7 @@ def test_build_formats_context():
     result = builder.build(results)
 
     # Then
-    assert result.text == (
-        "[Source 1]\n"
-        "Python experience\n\n"
-        "[Source 2]\n"
-        "FastAPI experience"
-    )
+    assert result.text == ("[Source 1]\nPython experience\n\n[Source 2]\nFastAPI experience")
 
 
 # CB-TC-06
@@ -265,9 +260,4 @@ def test_build_includes_all_results_when_fewer_than_max_chunks():
     assert len(result.sources) == 2
     assert [source.text for source in result.sources] == ["A", "B"]
 
-    assert result.text == (
-        "[Source 1]\n"
-        "A\n\n"
-        "[Source 2]\n"
-        "B"
-    )
+    assert result.text == ("[Source 1]\nA\n\n[Source 2]\nB")

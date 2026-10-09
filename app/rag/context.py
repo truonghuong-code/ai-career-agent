@@ -40,10 +40,7 @@ class ContextBuilder:
         sources = []
 
         for number, result in enumerate(selected_results, start=1):
-            sections.append(
-                f"[Source {number}]\n"
-                f"{result.chunk.text}"
-            )
+            sections.append(f"[Source {number}]\n{result.chunk.text}")
 
             sources.append(
                 ContextSource(
