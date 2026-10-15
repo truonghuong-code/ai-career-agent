@@ -113,7 +113,7 @@ curl -X POST http://localhost:8000/api/v1/documents \
   -F "file=@example.txt"
 ```
 
-Header này chưa phải authentication. Nó chỉ scope document query trong Phase 1.
+Header này chưa phải authentication. Nó scope document và Q&A retrieval query.
 
 ## Tests, lint và formatting
 
@@ -177,3 +177,41 @@ Kiểm tra `.env` có database URL host `localhost:5432`; URL bên trong Compose
 ### Upload không được nhận
 
 Endpoint chỉ hỗ trợ PDF, DOCX, TXT và Markdown; text phải UTF-8. Kiểm tra file không rỗng, nhỏ hơn upload limit, và header `X-Internal-User-ID` có mặt.
+
+
+## Phase 3 settings và kiểm thử
+
+| Variable (prefix `AI_CAREER_AGENT_`) | Default | Ý nghĩa |
+|---|---|---|
+| `LLM_PROVIDER` | `fake` | Offline stub hoặc `openai` |
+| `LLM_MODEL` | `gpt-4o-mini` | Model hỗ trợ Chat Completions structured JSON |
+| `LLM_TIMEOUT_SECONDS` | `30` | Deadline generation, dương và hữu hạn |
+| `LLM_MAX_OUTPUT_TOKENS` | `1024` | Giới hạn output, dương |
+| `QA_MAX_CONTEXT_CHUNKS` | `5` | Giới hạn chunk trong context, 1–20 |
+
+`OPENAI_API_KEY` dùng chung cho embedding và LLM khi chọn OpenAI.
+Fake mặc định không suy luận nội dung; trả insufficient evidence. Tests dùng
+fixed fake response hoặc mock SDK, không cần API key và không gọi API trả phí.
+Q&A không thay đổi schema nên không cần migration mới.
+
+Integration fixture hiện có TRUNCATE: luôn dùng database test riêng.
+Ví dụ một container độc lập (không mount volume dữ liệu hiện có):
+
+```bash
+docker run -d --name ai-career-phase3-tests -p 55432:5432 \
+  -e POSTGRES_USER=qa_test -e POSTGRES_PASSWORD=qa_test \
+  -e POSTGRES_DB=qa_test pgvector/pgvector:pg16
+export AI_CAREER_AGENT_DATABASE_URL=postgresql+asyncpg://qa_test:qa_test@localhost:55432/qa_test
+# Chờ container sẵn sàng trước khi migrate.
+alembic upgrade head
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+pytest
+ruff check .
+ruff format --check .
+docker compose config --quiet
+git diff --check
+```
+
+Đây là credentials minh họa cho container test local, không dùng cho production.
+Nếu PostgreSQL không chạy, tests cần DB sẽ skip; không xem đó là full validation.

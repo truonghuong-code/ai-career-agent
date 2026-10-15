@@ -3,7 +3,7 @@
 ## Phạm vi đã triển khai
 
 Hệ thống hiện là FastAPI backend với document ingestion, document lifecycle
-management và vector retrieval. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file
+management, vector retrieval và grounded Q&A. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file
 gốc trên local filesystem, trích xuất và chuẩn hóa text, tạo chunk xác định,
 sinh embedding, và lưu metadata/chunk/vector vào PostgreSQL + pgvector.
 
@@ -34,6 +34,7 @@ Document repository ── SQLAlchemy async ── PostgreSQL + pgvector
 
 Các endpoint hiện có:
 
+- `POST /api/v1/qa`
 - `GET /api/v1/health`
 - `POST /api/v1/documents`
 - `GET /api/v1/documents`
@@ -162,4 +163,23 @@ Không có authentication. `get_placeholder_owner_id` yêu cầu `X-Internal-Use
 
 ## Chưa tồn tại
 
-Các capability sau chưa được implement và không được xem là behavior hiện tại: authentication, user accounts/workspaces, AI Agent/tool orchestration, CV analysis, JD analysis, skill-gap analysis, personalized learning plan, interview system, Japanese IT communication coaching, LLM answer generation, reranking, hybrid search, background job queue, cloud object storage, production observability và deployment.
+Các capability sau chưa được implement và không được xem là behavior hiện tại: authentication, user accounts/workspaces, AI Agent/tool orchestration, CV analysis, JD analysis, skill-gap analysis, personalized learning plan, interview system, Japanese IT communication coaching, reranking, hybrid search, background job queue, cloud object storage, production observability và deployment.
+
+
+## Grounded Q&A — Phase 3
+
+`GroundedQAService` gọi `DocumentSearchService` → `ContextBuilder` →
+`PromptBuilder` → `LLMProvider`. Repository hiện có giữ ownership/status/filter.
+Service trả dataclass, route chuyển thành Pydantic `QAResponse`; không đổi database.
+Context cap giữ nguyên thứ tự retrieval. Citation được đối chiếu với context và
+marker trong answer; không trả metadata do LLM tự tạo. No-context bỏ qua LLM;
+insufficient evidence dùng thông báo cố định. Lỗi retrieval/provider tách biệt.
+
+`app/integrations/llm/provider.py` chứa protocol, immutable response, fake provider
+và OpenAI adapter. SDK types không đi vào service. Adapter dùng structured JSON,
+không retry, đóng client sau mỗi request. Deadline ở service bảo vệ cả provider
+thay thế. Log chỉ ghi event/status/counts; request ID middleware hiện có giữ nguyên.
+Prompt v1 giữ hai messages và context nguyên văn, chỉ bổ sung output contract ở
+system instructions. Đây là biện pháp hướng dẫn model, không bảo đảm factuality
+hoặc chống mọi prompt injection. Fake mặc định chỉ báo insufficient evidence;
+controlled fake responses dùng trong tests kiểm tra nhánh answered.

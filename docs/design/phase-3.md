@@ -1082,3 +1082,40 @@ The following table maps Phase 3 requirements to the PromptBuilder design rules.
 | P3-NFR-04 | LLM provider replaceability | PB-DD-07, PB-DD-10 |
 
 The corresponding test cases will be defined in `docs/test-design/phase-3.md` after the Detail Design is reviewed.
+
+# 3.3–3.6 — Provider, orchestration and HTTP contract
+
+- `LLMProvider.generate(Sequence[PromptMessage]) -> LLMResponse` is async.
+  The immutable response contains `answer`, `source_numbers`, and
+  `insufficient_evidence`. SDK types remain in the OpenAI adapter.
+- Default `fake` provider returns a deterministic insufficient-evidence response;
+  tests inject a fixed response to exercise successful answers. It is a stub,
+  not a semantic answer generator. OpenAI uses structured JSON output, disables
+  retries, limits output tokens, closes its client, and maps errors to safe domain errors.
+- Prompt v1 retains the existing two-message format and verbatim context. System
+  instructions specify the JSON response contract and distrust document instructions,
+  including embedded source markers. This is not a guarantee against model injection.
+- `GroundedQAService` reuses `DocumentSearchService`; only the existing repository
+  scopes owners, completed status and optional document IDs. No new SQL/schema.
+- Validate owner/question/limit before retrieval. Build bounded context; empty
+  context returns `no_context` without invoking LLM. A provider deadline applies
+  even to replacement providers. Retrieval errors stay distinct from no-context.
+- Successful citations must be positive integers present in BuiltContext and agree
+  with `[Source N]` markers in the answer. Missing/unknown/mismatched citations
+  fail with a provider error. Return cited sources only, in original context order,
+  retaining original numbers. Insufficient evidence returns a canonical message
+  and no sources rather than relaying potentially unsupported model prose.
+- `POST /api/v1/qa`: question (trimmed, 1–5000 chars), limit (1–20, default 5),
+  optional document_ids (`null` means all owned documents; `[]` means none).
+  Response: answer, status (`answered`, `no_context`, `insufficient_evidence`),
+  sources (number, document_id, chunk_id, chunk_index). No persistence objects.
+- HTTP: missing owner 400; invalid body 422; provider/embedding failure 502;
+  LLM deadline 504; retrieval database failure 503; invalid provider configuration 503.
+  Log only event/status/counts, never prompts, answers, raw provider exceptions or keys.
+- Settings: LLM_PROVIDER=fake, LLM_MODEL=gpt-4o-mini, LLM_TIMEOUT_SECONDS=30,
+  LLM_MAX_OUTPUT_TOKENS=1024, QA_MAX_CONTEXT_CHUNKS=5. Prefix all with
+  AI_CAREER_AGENT_. OPENAI_API_KEY is shared with the existing embedding adapter.
+
+OpenAI adapter reference: [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=chat).
+Structured schema compliance does not establish factual groundedness. Live model
+quality and prompt-injection evaluation remain separate from offline contract tests.

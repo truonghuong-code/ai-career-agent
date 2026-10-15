@@ -384,4 +384,19 @@ Phase 3 is considered functionally complete when:
 3. Retrieved chunks can be transformed into grounded LLM context.
 4. The user's question and retrieved context can be used to construct an LLM request.
 5. The system can generate an answer through an LLM-provider abstraction.
-6. The answer is returned
+6. The answer is returned with structured source references from the included context.
+7. Empty context and insufficient evidence have explicit response statuses.
+8. Ownership and existing retrieval filters remain enforced.
+9. Provider failures and timeouts produce safe, explicit HTTP errors.
+10. Offline tests exercise the complete pipeline without external LLM calls.
+
+## Implemented HTTP contract
+
+`POST /api/v1/qa` requires the temporary `X-Internal-User-ID` header.
+Request: `question` (trimmed, 1–5000 characters), `limit` (1–20, default 5),
+optional `document_ids` (null: all owned documents; empty list: none).
+Response: `answer`, `status` (`answered`, `no_context`, `insufficient_evidence`),
+`sources` with `number`, `document_id`, `chunk_id`, `chunk_index`.
+Only sources actually cited in a validated answer are returned, in context order.
+No-context and insufficient-evidence responses contain an empty sources list.
+Invalid provider citations are errors, not successful grounded answers.

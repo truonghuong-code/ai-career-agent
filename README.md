@@ -2,7 +2,7 @@
 
 Backend foundation for an AI-powered career-development application focused on AI Engineer and BrSE career paths.
 
-Phase 1 adds document ingestion and a RAG foundation: PDF, DOCX, TXT, and Markdown extraction; deterministic chunking; pluggable embeddings; pgvector cosine retrieval; and source-aware search results. It intentionally contains no AI agent, CV/JD analysis, authentication, or interview functionality.
+Phases 1–3 provide document lifecycle, retrieval and grounded Q&A: PDF, DOCX, TXT, and Markdown extraction; deterministic chunking; pluggable embeddings; pgvector cosine retrieval; and source-aware search results. It intentionally contains no AI agent, CV/JD analysis, authentication, or interview functionality.
 
 ## Prerequisites
 
@@ -118,10 +118,44 @@ app/api/          HTTP routes
 app/core/         Configuration and logging
 app/db/           SQLAlchemy setup, models, and Alembic migrations
 app/schemas/      Shared Pydantic schemas
-app/services/     Application services (reserved for later phases)
+app/services/     Document and grounded Q&A services
 app/agents/       Agent orchestration (reserved for later phases)
 app/tools/        Agent tools (reserved for later phases)
 app/rag/          Parsing, chunking, embeddings, and retrieval components
 app/integrations/ External provider and storage adapters
 tests/            Unit and integration tests
 ```
+
+
+## Grounded Q&A
+
+```bash
+curl -X POST http://localhost:8000/api/v1/qa \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-User-ID: local-user" \
+  -d '{"question":"What Python experience is documented?", "limit":5}'
+```
+
+Response fields are `answer`, `status` and `sources`. Each source contains
+`number`, `document_id`, `chunk_id`, `chunk_index`; source numbers match
+`[Source N]` citations and retain retrieval order. Optional `document_ids` filters
+owned completed documents (`[]` selects none). Empty retrieval returns `no_context`
+without an LLM call; unsupported evidence returns `insufficient_evidence`.
+Both have no citations. Provider errors return 502, timeout 504, retrieval
+infrastructure/configuration errors 503. Invalid input returns 422; missing owner 400.
+
+`AI_CAREER_AGENT_LLM_PROVIDER=fake` is the offline default. It conservatively
+returns insufficient evidence, not a semantic answer. Tests inject deterministic
+responses to verify successful answers. For live generation configure
+`AI_CAREER_AGENT_LLM_PROVIDER=openai` and `AI_CAREER_AGENT_OPENAI_API_KEY`.
+The configured model must support Chat Completions structured JSON output.
+Default model: `gpt-4o-mini`; timeout: 30 seconds; output limit: 1024 tokens;
+context limit: 5 chunks. See `.env.example` for all settings. Live OpenAI use
+incurs API costs; automated tests never call it.
+
+Citation validation ensures source identity, not factual correctness of model
+claims. Prompt instructions treat document content as untrusted data, but do not
+guarantee injection resistance. Production authentication remains out of scope.
+
+Integration fixtures truncate document tables. Run integration tests only against
+an isolated test database, never a development database with documents to preserve.

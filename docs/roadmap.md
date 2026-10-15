@@ -21,17 +21,16 @@ document IDs/limit, stable retrieval result contract và integration quality tes
 với deterministic embeddings. Phase này vẫn dùng `X-Internal-User-ID` như
 ownership placeholder, chưa phải authentication.
 
-## Planned
-
 ### Phase 3 — LLM integration và grounded answer generation
 
-**Objective:** trả lời câu hỏi dựa trên retrieved chunks, với nguồn có thể truy vết.
+**Đã triển khai:** ContextBuilder, PromptBuilder, async LLM protocol, offline fake
+provider, OpenAI adapter với structured response, GroundedQAService và
+`POST /api/v1/qa`. Có citation validation, owner-scoped retrieval, no-context /
+insufficient-evidence status, timeout và safe error mapping; unit/API/integration tests.
+Fake provider chỉ là stub offline. Live model quality, prompt-injection evaluation,
+token-budget optimization và cost telemetry chưa thuộc phần đã xác minh.
 
-**Major features:** LLM provider adapter, prompt/version management, structured answer schema, citations từ document/chunk, context assembly, error/cost/timeout handling và evaluation groundedness cơ bản.
-
-**Architecture considerations:** retrieval vẫn là service độc lập; LLM layer không truy cập database trực tiếp. Chỉ đưa context đã scope theo owner vào prompt.
-
-**Dependencies:** Phase 2 retrieval evaluation và metadata đủ tốt.
+## Planned
 
 ### Phase 4 — CV và JD analysis
 

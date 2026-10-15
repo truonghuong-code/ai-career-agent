@@ -946,3 +946,33 @@ This is verified through component isolation and, where necessary, mocks or depe
 - Ruff checks pass.
 - Relevant existing unit tests remain passing.
 - Test results and remaining limitations are documented.
+## Phase 3.3–3.6 traceability
+
+| Requirements | Tests / expected behavior |
+|---|---|
+| REQ-05, ERR-03, NFR-02/04 | test_llm: deterministic fake, factory/config, mocked OpenAI structured request, invalid/empty/refusal/truncated output, timeout and safe errors |
+| REQ-01/02, SEC-01 | test_qa_service: validate before retrieval, forward normalized owner/question/filter/limit |
+| REQ-03/07, GR-03/04 | test_qa_service: context cap, cited subset in retrieval order, reject invented/mismatched/missing citations |
+| REQ-06/08, GR-02, ERR-02/04 | test_qa_service: empty context skips LLM, canonical insufficient evidence, distinguish retrieval failure |
+| REQ-09, SEC-02/03 | test_qa_api: response contract, input/header validation, safe errors, request ID and configuration failure |
+| NFR-05, SEC-01 | integration/test_grounded_qa: ingest → real pgvector retrieval → builders → fake LLM → HTTP, owner and document/status filtering |
+
+All LLM calls use fake providers or SDK mocks. Database tests use an isolated test
+database because existing integration fixtures truncate document tables. Never run
+these fixtures against an existing development database containing user documents.
+
+### Offline pipeline and implementation verification (2026-10-14)
+
+`tests/integration/test_qa_offline.py` exercises HTTP → GroundedQAService →
+DocumentSearchService → deterministic embedding → stub repository → builders →
+fake LLM. It covers success, empty context, insufficient evidence, fabricated
+citations, provider failure, actual async deadline, retrieval failure and invalid
+input. It does not establish PostgreSQL ownership behavior.
+
+Executed full `pytest` with the isolated test URL on localhost:55432:
+**111 passed, 38 skipped**. The 38 PostgreSQL tests (including 8 new Phase 3
+DB tests) skipped because the test database was unavailable; Docker daemon socket
+was absent. Real PostgreSQL integration remains unverified in this environment.
+One existing Starlette/httpx deprecation warning appeared. Ruff lint, Ruff format
+check, `docker compose config --quiet` and `git diff --check` passed.
+No schema changes, new dependencies, live LLM calls or Git history changes.

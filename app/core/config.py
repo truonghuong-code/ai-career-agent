@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,7 +27,19 @@ class Settings(BaseSettings):
     embedding_provider: str = "deterministic"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = Field(default=256, gt=0)
-    openai_api_key: str | None = None
+    openai_api_key: str | None = Field(default=None, repr=False)
+    llm_provider: str = "fake"
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: float = Field(default=30, gt=0, allow_inf_nan=False)
+    llm_max_output_tokens: int = Field(default=1024, gt=0)
+    qa_max_context_chunks: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("llm_model")
+    @classmethod
+    def validate_llm_model(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("LLM_MODEL must not be empty")
+        return value.strip()
 
 
 @lru_cache
