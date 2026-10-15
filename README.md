@@ -2,7 +2,7 @@
 
 Backend foundation for an AI-powered career-development application focused on AI Engineer and BrSE career paths.
 
-Phases 1–3 provide document lifecycle, retrieval and grounded Q&A: PDF, DOCX, TXT, and Markdown extraction; deterministic chunking; pluggable embeddings; pgvector cosine retrieval; and source-aware search results. It intentionally contains no AI agent, CV/JD analysis, authentication, or interview functionality.
+Phases 1–4 provide document lifecycle, retrieval, grounded Q&A and CV/JD extraction: PDF, DOCX, TXT, and Markdown extraction; deterministic chunking; pluggable embeddings; pgvector cosine retrieval; and source-aware search results. It intentionally contains no AI agent, skill-gap scoring, authentication, or interview functionality.
 
 ## Prerequisites
 
@@ -159,3 +159,43 @@ guarantee injection resistance. Production authentication remains out of scope.
 
 Integration fixtures truncate document tables. Run integration tests only against
 an isolated test database, never a development database with documents to preserve.
+
+
+## CV and Job Description analysis (Phase 4)
+
+After ingesting a document, request an extraction explicitly as `cv` or `jd`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/documents/<document-id>/analyses \
+  -H "Content-Type: application/json" \
+  -H "X-Internal-User-ID: local-user" \
+  -d '{"kind":"cv"}'
+
+curl 'http://localhost:8000/api/v1/documents/<document-id>/analyses?kind=cv&limit=20&offset=0' \
+  -H "X-Internal-User-ID: local-user"
+
+curl http://localhost:8000/api/v1/analyses/<analysis-id> \
+  -H "X-Internal-User-ID: local-user"
+```
+
+Creation returns 201 with an immutable version, typed profile, source snapshots and
+provenance. Each nonempty fact has `value` and `evidence` containing source numbers
+and verbatim quotes. CV fields: headline, skills, experience, education,
+certifications, languages. JD fields: title, employer, required_skills,
+preferred_skills, responsibilities, qualifications, languages. Missing facts are
+empty arrays. Every POST creates a new version per document/kind. List returns
+metadata only; get returns the stored profile and evidence. Deleting a document
+also deletes its analyses. File format `document_type` remains unchanged.
+
+Apply `alembic upgrade head` before using Phase 4. It adds the analysis table without
+changing document data. Uses the existing LLM provider/model/key/timeout settings;
+new settings are `AI_CAREER_AGENT_ANALYSIS_MAX_CONTEXT_CHARS=40000` and
+`AI_CAREER_AGENT_ANALYSIS_MAX_OUTPUT_TOKENS=4096`. Context over budget is rejected
+with 413, never silently truncated. Empty text yields 422, incomplete/changed
+documents 409, unavailable resources 404, provider failures 502, timeout 504,
+storage/configuration failures 503. Fake provider conservatively returns empty
+profiles (`insufficient_evidence`); live extraction requires selecting OpenAI.
+
+Evidence checks establish traceability, not factual accuracy; review extracted
+profiles before use. No matching scores, skill-gap calculation or learning plans.
+Full contracts: [Phase 4 specification](docs/specs/phase-4.md).

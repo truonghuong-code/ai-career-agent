@@ -1,12 +1,14 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from openai import APITimeoutError, AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.core.config import Settings
 from app.rag.prompt import PromptMessage
+
+ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
 INSUFFICIENT_EVIDENCE = (
     "The provided documents do not contain enough evidence to answer this question."
@@ -67,6 +69,21 @@ class OpenAILLMProvider:
         self.max_output_tokens = max_output_tokens
 
     async def generate(self, messages: Sequence[PromptMessage]) -> LLMResponse:
+        payload = await self.generate_structured(
+            messages, _AnswerPayload, schema_name="grounded_answer"
+        )
+        return LLMResponse(
+            payload.answer, tuple(payload.source_numbers), payload.insufficient_evidence
+        )
+
+    async def generate_structured(
+        self,
+        messages: Sequence[PromptMessage],
+        response_model: type[ResponseModel],
+        *,
+        schema_name: str | None = None,
+    ) -> ResponseModel:
+        """Shared structured transport; domain-specific validation stays in services."""
         client = AsyncOpenAI(api_key=self._api_key, timeout=self.timeout_seconds, max_retries=0)
         try:
             response = await client.chat.completions.create(
@@ -76,9 +93,9 @@ class OpenAILLMProvider:
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
-                        "name": "grounded_answer",
+                        "name": schema_name or response_model.__name__,
                         "strict": True,
-                        "schema": _AnswerPayload.model_json_schema(),
+                        "schema": response_model.model_json_schema(),
                     },
                 },
             )
@@ -87,10 +104,7 @@ class OpenAILLMProvider:
             choice = response.choices[0]
             if choice.finish_reason != "stop" or choice.message.refusal:
                 raise LLMProviderError("LLM returned an incomplete response")
-            payload = _AnswerPayload.model_validate_json(choice.message.content or "")
-            return LLMResponse(
-                payload.answer, tuple(payload.source_numbers), payload.insufficient_evidence
-            )
+            return response_model.model_validate_json(choice.message.content or "")
         except APITimeoutError as exc:
             raise LLMTimeoutError("LLM request timed out") from exc
         except LLMProviderError:

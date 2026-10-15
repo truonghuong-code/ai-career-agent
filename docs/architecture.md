@@ -3,7 +3,7 @@
 ## Phạm vi đã triển khai
 
 Hệ thống hiện là FastAPI backend với document ingestion, document lifecycle
-management, vector retrieval và grounded Q&A. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file
+management, vector retrieval, grounded Q&A và CV/JD extraction. Nó nhận PDF, DOCX, TXT hoặc Markdown, lưu file
 gốc trên local filesystem, trích xuất và chuẩn hóa text, tạo chunk xác định,
 sinh embedding, và lưu metadata/chunk/vector vào PostgreSQL + pgvector.
 
@@ -76,7 +76,7 @@ lọc cả `DocumentChunk.owner_id`, `Document.owner_id`, document status
 
 ## Database models và pgvector
 
-Hai SQLAlchemy model hiện có:
+Hai SQLAlchemy model tài liệu (ngoài `DocumentAnalysis` mô tả ở phần Phase 4):
 
 - `Document`: UUID, `owner_id`, filename, MIME type, document type, size, SHA-256 checksum, storage path, processing status, extracted text length, error message và timestamps.
 - `DocumentChunk`: UUID, document/owner IDs, thứ tự chunk, text, normalized character offsets, JSONB extraction metadata, vector embedding 256 chiều và timestamp.
@@ -163,7 +163,7 @@ Không có authentication. `get_placeholder_owner_id` yêu cầu `X-Internal-Use
 
 ## Chưa tồn tại
 
-Các capability sau chưa được implement và không được xem là behavior hiện tại: authentication, user accounts/workspaces, AI Agent/tool orchestration, CV analysis, JD analysis, skill-gap analysis, personalized learning plan, interview system, Japanese IT communication coaching, reranking, hybrid search, background job queue, cloud object storage, production observability và deployment.
+Các capability sau chưa được implement và không được xem là behavior hiện tại: authentication, user accounts/workspaces, AI Agent/tool orchestration, skill-gap analysis, personalized learning plan, interview system, Japanese IT communication coaching, reranking, hybrid search, background job queue, cloud object storage, production observability và deployment.
 
 
 ## Grounded Q&A — Phase 3
@@ -183,3 +183,35 @@ Prompt v1 giữ hai messages và context nguyên văn, chỉ bổ sung output co
 system instructions. Đây là biện pháp hướng dẫn model, không bảo đảm factuality
 hoặc chống mọi prompt injection. Fake mặc định chỉ báo insufficient evidence;
 controlled fake responses dùng trong tests kiểm tra nhánh answered.
+
+
+## CV/JD analysis — Phase 4
+
+`POST /api/v1/documents/{document_id}/analyses` nhận kind=cv hoặc jd trên tài
+liệu đã ingest. `document_type` vẫn là format file; kind nằm trên analysis record.
+`AnalysisService` lấy toàn bộ chunks theo thứ tự qua `AnalysisRepository`, dùng
+ContextBuilder và domain prompt riêng, gọi `AnalysisProvider`, kiểm tra Pydantic
+profile và evidence quote nguyên văn rồi lưu. Không dùng similarity top-k, không
+thay parser/chunker và không thực hiện skill-gap scoring.
+
+Mỗi fact có value và evidence (source_number, quote). Response chứa snapshots
+nguồn (document/chunk IDs, index, text). CV và JD có schema riêng; missing fields
+là empty arrays. Fake provider trả profile rỗng với status insufficient_evidence.
+OpenAI provider dùng chung structured transport với Phase 3, nhưng schema và
+output budget riêng. Timeout, invalid output và quote không khớp không được lưu.
+
+Migration `20261015_0003` thêm `document_analyses`: profile/sources/provenance JSONB,
+checksum, kind, status, version và timestamps. Append-only; khóa document row chỉ
+trong lúc cấp version + insert, unique(document_id, kind, version). Read transaction
+được release trước khi gọi model. Save kiểm tra lại owner/status/checksum. Xóa
+document cascade xóa cả analysis snapshots; không có endpoint sửa analysis.
+
+GET document analyses trả metadata phân trang; GET `/api/v1/analyses/{analysis_id}`
+trả profile đầy đủ để review. Repository scope cả analysis và document owner, cả
+chunk và document owner khi lấy nguồn. Read endpoints không phụ thuộc LLM config.
+Provenance giữ prompt/schema version, messages, provider/model và generation limits.
+Reproducibility ở đây là tái tạo input, không hứa output model giống nhau.
+
+Evidence substring check xác minh trích dẫn và nguồn, không chứng minh mọi diễn
+đạt của model được quote hỗ trợ. Prompt injection và chất lượng live model vẫn
+cần đánh giá riêng; auth production chưa được triển khai.

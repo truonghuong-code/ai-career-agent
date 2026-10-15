@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: float = Field(default=30, gt=0, allow_inf_nan=False)
     llm_max_output_tokens: int = Field(default=1024, gt=0)
+    analysis_max_context_chars: int = Field(default=40000, gt=0)
+    analysis_max_output_tokens: int = Field(default=4096, gt=0)
     qa_max_context_chunks: int = Field(default=5, ge=1, le=20)
 
     @field_validator("llm_model")

@@ -201,6 +201,7 @@ Ví dụ một container độc lập (không mount volume dữ liệu hiện c�
 docker run -d --name ai-career-phase3-tests -p 55432:5432 \
   -e POSTGRES_USER=qa_test -e POSTGRES_PASSWORD=qa_test \
   -e POSTGRES_DB=qa_test pgvector/pgvector:pg16
+(
 export AI_CAREER_AGENT_DATABASE_URL=postgresql+asyncpg://qa_test:qa_test@localhost:55432/qa_test
 # Chờ container sẵn sàng trước khi migrate.
 alembic upgrade head
@@ -211,7 +212,109 @@ ruff check .
 ruff format --check .
 docker compose config --quiet
 git diff --check
+)
 ```
 
 Đây là credentials minh họa cho container test local, không dùng cho production.
 Nếu PostgreSQL không chạy, tests cần DB sẽ skip; không xem đó là full validation.
+
+
+## Phase 4 — CV/JD analysis
+
+Migration mới: `20261015_0003_add_document_analyses.py`. Chạy `alembic upgrade head`
+trước khi dùng endpoints analysis. Không cần dependency mới. Downgrade về
+`20260927_0002` xóa bảng analyses (chỉ dùng trên database test/disposable khi kiểm
+tra migration; không downgrade database chứa analysis cần giữ).
+
+Settings dùng chung: `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`,
+`OPENAI_API_KEY`. Hai setting mới (đều có prefix `AI_CAREER_AGENT_`):
+
+| Setting | Default | Ý nghĩa |
+|---|---|---|
+| `ANALYSIS_MAX_CONTEXT_CHARS` | `40000` | Giới hạn toàn bộ context / JSON user message; dương |
+| `ANALYSIS_MAX_OUTPUT_TOKENS` | `4096` | Output generation cap riêng cho profile; dương |
+
+API create/list: `/api/v1/documents/{document_id}/analyses`; detail:
+`/api/v1/analyses/{analysis_id}`. Body create: `{"kind":"cv"}` hoặc `{"kind":"jd"}`.
+Ownership header vẫn là placeholder nội bộ. List hỗ trợ kind, limit 1–100, offset>=0.
+Lịch sử chỉ append, version theo document/kind. GET không cần model/key hợp lệ.
+Sources và prompt snapshots có nội dung CV/JD: không đưa responses vào log hoặc Git.
+
+Kiểm tra trên container test riêng; không dùng database có tài liệu người dùng
+vì fixtures hiện tại TRUNCATE. Nếu container test ở phần Phase 3 đã được tạo thì
+dùng lại; nếu chưa có, tạo mới như sau (port 55432 phải trống):
+
+```bash
+docker run -d --name ai-career-phase4-tests -p 55432:5432 \
+  -e POSTGRES_USER=qa_test -e POSTGRES_PASSWORD=qa_test \
+  -e POSTGRES_DB=qa_test pgvector/pgvector:pg16
+source .venv/bin/activate
+(
+export AI_CAREER_AGENT_DATABASE_URL=postgresql+asyncpg://qa_test:qa_test@localhost:55432/qa_test
+# Sau khi pg_isready báo accepting connections:
+alembic upgrade head
+ruff check .
+ruff format --check .
+docker compose config --quiet
+pytest -v
+git diff --check
+git status
+)
+```
+
+Kiểm tra migration round-trip riêng trên database test trước khi tạo dữ liệu test:
+
+```bash
+(
+export AI_CAREER_AGENT_DATABASE_URL=postgresql+asyncpg://qa_test:qa_test@localhost:55432/qa_test
+alembic downgrade 20260927_0002
+alembic upgrade head
+alembic check
+)
+```
+
+Khi PostgreSQL chưa có, có thể render `alembic upgrade head --sql` và
+`alembic downgrade 20261015_0003:20260927_0002 --sql`; đây chỉ là offline validation.
+Unit + `tests/integration/test_analysis_offline.py` không cần PostgreSQL hoặc
+API key. `tests/integration/test_document_analysis.py` kiểm tra persistence,
+concurrent versions, ownership và cascade trên PostgreSQL thật. Không gọi paid API.
+
+
+### Alembic kết nối nhầm port 55432
+
+Alembic lấy URL từ `get_settings()` trong `migrations/env.py`, cùng nguồn với
+`app/db/session.py`. Thứ tự ưu tiên: biến môi trường của process → `.env` → default
+trong Settings. `alembic.ini` không chứa URL riêng. Sửa `.env` không có tác dụng
+nếu terminal vẫn giữ `export AI_CAREER_AGENT_DATABASE_URL=...` từ phiên test.
+
+- Local API/Alembic dùng `localhost:5432` cho PostgreSQL do Compose publish.
+- API container dùng `db:5432` trong Docker network, do Compose cấu hình rõ ràng.
+- `localhost:55432` chỉ dành cho container test riêng, không phải database Compose.
+
+Nếu terminal đã chạy lệnh export test từ hướng dẫn cũ, khôi phục cấu hình local:
+
+```bash
+unset AI_CAREER_AGENT_DATABASE_URL
+source .venv/bin/activate
+alembic current
+alembic upgrade head
+alembic current
+alembic heads
+```
+
+Khi dùng credentials local tùy chỉnh, đặt URL phù hợp trong `.env` trước khi unset.
+Không in toàn bộ URL để debug. Kiểm tra đích kết nối mà không hiển thị credentials:
+
+```bash
+python - <<'PYCODE'
+from sqlalchemy.engine import make_url
+from app.core.config import get_settings
+url = make_url(get_settings().database_url)
+print(f"Database target: {url.host}:{url.port}")
+PYCODE
+```
+
+Các ví dụ test phía trên dùng subshell `( ... )`, nên biến export tự hết hiệu lực
+khi kết thúc block. Không chạy integration tests trên database development:
+fixtures có TRUNCATE. Một process khác (bao gồm coding agent) không thể unset
+biến trong terminal đã mở của người dùng; lệnh unset cần chạy trong chính terminal đó.

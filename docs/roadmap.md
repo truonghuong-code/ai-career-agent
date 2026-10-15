@@ -30,17 +30,24 @@ insufficient-evidence status, timeout và safe error mapping; unit/API/integrati
 Fake provider chỉ là stub offline. Live model quality, prompt-injection evaluation,
 token-budget optimization và cost telemetry chưa thuộc phần đã xác minh.
 
-## Planned
+## Implemented — verification pending
 
 ### Phase 4 — CV và JD analysis
 
-**Objective:** chuyển CV và Job Description thành profile có cấu trúc, có evidence từ tài liệu nguồn.
+**Đã triển khai:** CV/JD extraction workflow trên tài liệu đã ingest; Pydantic
+profiles có evidence quotes; provider fake/OpenAI; create/list/get APIs;
+persistence và append-only versions; source/prompt/config snapshots; owner filtering,
+context budget và cascade lifecycle. Migration mới `20261015_0003`.
 
-**Major features:** document type conventions cho CV/JD, Pydantic schemas cho extracted profile, LLM structured output, persistence/versioning của analysis và source evidence.
+**Verification:** unit và offline HTTP tests chạy không cần LLM trả phí. PostgreSQL
+integration/concurrency và migration online cần database test riêng; xem kết quả
+thực thi trong `docs/test-design/phase-4.md`. Chưa coi là đã xác minh đầy đủ khi
+các kiểm tra PostgreSQL chưa chạy.
 
-**Architecture considerations:** đây là application workflow mới; không trộn logic CV/JD vào generic parser/retrieval. Thiết kế schema để có thể review và tái tạo analysis.
+**Giới hạn:** fake trả empty profile; quote checks không chứng minh semantic
+entailment. Không có scoring, skill-gap hay learning plan (Phase 5).
 
-**Dependencies:** Phase 3 structured LLM output và grounded context.
+## Planned
 
 ### Phase 5 — Skill gap và personalized learning plan
 
